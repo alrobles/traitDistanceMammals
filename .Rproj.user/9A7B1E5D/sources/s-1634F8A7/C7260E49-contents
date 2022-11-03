@@ -87,16 +87,22 @@ traits_activity_species_imputed <- select(traits, sciName, tiplabel) %>%
   rename(tiplabel = species)
 
 
-traits_activity_species_imputed <- traits_activity_species_imputed %>% 
-  mutate(total_activity = activity_nocturnal + activity_crepuscular + activity_diurnal) %>% 
-  mutate(activity_nocturnal = activity_nocturnal/total_activity) %>% 
-  mutate(activity_crepuscular = activity_crepuscular/total_activity) %>% 
-  mutate(activity_diurnal = activity_diurnal/total_activity) %>% 
-  select(-total_activity) 
-
 # We write the final data frame as csv file and as rds file
 write_csv(traits_activity_species_imputed, "data-raw/traits_activity_species_BM_imputed.csv")
 write_rds(traits_activity_species_imputed, "data/traits_activity_species_BM_imputed.rds")
 
 
 
+
+
+traits_activity_species_rescale_imputed <- traits_activity_species_imputed %>% 
+  mutate(total_activity = activity_nocturnal + activity_crepuscular + activity_diurnal) %>% 
+  mutate(activity_nocturnal = activity_nocturnal/total_activity) %>% 
+  mutate(activity_crepuscular = activity_crepuscular/total_activity) %>% 
+  mutate(activity_diurnal = activity_diurnal/total_activity) %>% 
+  select(-total_activity) 
+
+
+# We write the final data frame as csv file and as rds file
+write_csv(traits_activity_species_rescale_imputed, "data-raw/traits_activity_species_BM_rescale_imputed.csv")
+write_rds(traits_activity_species_rescale_imputed, "data/traits_activity_species_BM_rescale_imputed.rds")
