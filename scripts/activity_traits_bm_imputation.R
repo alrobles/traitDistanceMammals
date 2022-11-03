@@ -1,0 +1,102 @@
+if(!require(tidyverse)) install.packages("tidyverse") 
+if(!require(readxl)) install.packages("readxl") 
+if(!require(janitor)) install.packages("janitor") 
+if(!require(ape)) install.packages("ape") # example imputing
+if(!require(Rphylopars)) install.packages("Rphylopars") # example imputing
+
+
+
+# We read the raw excel data
+traits <- readxl::read_excel("data-raw/MAMMALS_traitsToPublish_MS2b_2022.xlsx", sheet = 1)
+
+# We keep only serrestrial mammals
+traits <- traits %>% 
+  filter(MarineOrNot != 1) %>% 
+  filter(`extinct?` == 0)
+
+# We are goint to impute the traits according to mammals phylogeny in Upham 2019
+
+traits_activity <- traits %>% 
+  filter(MarineOrNot != 1) %>% 
+  select(tiplabel,
+         `Activity-Nocturnal`,
+         `Activity-Crepuscular`, 
+         `Activity-Diurnal`
+  )
+
+# We clean the variable names to have consistence
+traits_activity <- traits_activity %>% janitor::clean_names() 
+
+# We change all activity features as numeric values
+traits_activity <- traits_activity %>% 
+  mutate_at(2:ncol(traits_activity), as.numeric)
+
+# We rename tiplabel according to Rphylopars package
+traits_activity <- traits_activity %>% 
+  rename(species = tiplabel) 
+
+# We read the consensus tree
+mammal_tree <- ape::read.nexus("https://raw.githubusercontent.com/n8upham/MamPhy_v1/master/_DATA/MamPhy_fullPosterior_BDvr_Completed_5911sp_topoCons_NDexp_MCC_v2_target.tre")
+
+# We prune the tree keeping onlye species in our trait matrix
+mammal_tree_prune <- ape::keep.tip(mammal_tree, traits_activity$species)
+
+# We create an iteration variable to map the imputation accross all the features 
+iter <- 2:ncol(traits_activity)
+
+
+# We map an anonymus function that impute the feature value
+# according a brownian motion model on the phylogenetic tree
+# via purrr package
+
+reconstruction <- purrr::map(iter, function(x){
+  p_BM <- phylopars(trait_data = select(traits_activity, c(1, all_of(x))),
+                    tree = mammal_tree_prune) 
+  
+  as_tibble(p_BM$anc_recon, rownames = "species")
+})
+
+# We keep only the ancestral reconstruction but is piossible to store 
+# the variance and the means.
+
+# We collect all the outputs in a data frame
+reconstruction_all <- reconstruction %>% reduce(inner_join) 
+
+# We separate the cases with NA to mark as imputation case
+traits_activity_NA <- traits_activity %>% 
+  filter(is.na(activity_nocturnal)) %>% 
+  select(species) %>% 
+  mutate(imputation = 1)
+
+# We join with the cases that have information
+traits_activity_species <- traits_activity %>%
+  select(species) %>% 
+  left_join(., traits_activity_NA) %>% 
+  replace(is.na(.), 0)
+
+# Finally, we join the species information with the traits reconstruction 
+# and round the imputed value
+
+traits_activity_species_imputed <- inner_join(traits_activity_species, reconstruction_all) %>% 
+  mutate_at(3:5, function(x) round(x, 0) ) 
+
+# We add species name
+traits_activity_species_imputed <- select(traits, sciName, tiplabel) %>% 
+  rename(species = tiplabel) %>% 
+  inner_join(traits_activity_species_imputed) %>% 
+  rename(tiplabel = species)
+
+
+traits_activity_species_imputed %>% 
+  mutate(total_activity = activity_nocturnal + activity_crepuscular + activity_diurnal) %>% 
+  mutate(activity_nocturnal = activity_nocturnal/total_activity) %>% 
+  mutate(activity_crepuscular = activity_crepuscular/total_activity) %>% 
+  mutate(activity_diurnal = activity_diurnal/total_activity) %>% 
+  select(-total_activity) %>% View()
+
+# We write the final data frame as csv file and as rds file
+write_csv(traits_activity_species_imputed, "data-raw/traits_activity_species_BM_imputed.csv")
+write_rds(traits_activity_species_imputed, "data/traits_activity_species_BM_imputed.rds")
+
+
+

@@ -1,0 +1,73 @@
+if(!require(tidyverse)) install.packages("tidyverse") 
+if(!require(readxl)) install.packages("readxl") 
+if(!require(janitor)) install.packages("janitor") 
+if(!require(ape)) install.packages("ape") # example imputing
+if(!require(Rphylopars)) install.packages("Rphylopars") # example imputing
+
+
+
+# We read the raw excel data
+traits <- readxl::read_excel("data-raw/MAMMALS_traitsToPublish_MS2b_2022.xlsx", sheet = 1)
+
+# We keep only terrestrial extant mammals
+traits <- traits %>% 
+  filter(MarineOrNot != 1) %>% 
+  filter(`extinct?` == 0)
+
+# We are goint to impute the traits according to mammals phylogeny in Upham 2019
+
+traits_diet <- traits %>% 
+  select(tiplabel,
+         `Diet-Inv`,
+         `Diet-Vend`,
+         `Diet-Vect`,
+         `Diet-Vfish`,
+         `Diet-Vunk`,
+         `Diet-Scav`,
+         `Diet-Fruit`,
+         `Diet-Nect`,
+         `Diet-Seed`,
+         `Diet-PlantO`,
+  ) 
+
+# We clean the variable names to have consistence
+traits_diet <- traits_diet %>% janitor::clean_names() 
+
+# We change all diet features as numeric values
+traits_diet <- traits_diet %>% 
+  mutate_at(2:ncol(traits_diet), as.numeric)
+
+# Because diet values are form 0 to 100 we change rescale from 0 to 1
+traits_diet <- traits_diet %>% 
+  mutate_at(2:ncol(traits_diet), function(x) x/100) 
+
+# We rename tiplabel according to Rphylopars package
+traits_diet <- traits_diet %>% 
+  rename(species = tiplabel) 
+
+# We read the consensus tree
+mammal_tree <- ape::read.nexus("https://raw.githubusercontent.com/n8upham/MamPhy_v1/master/_DATA/MamPhy_fullPosterior_BDvr_Completed_5911sp_topoCons_NDexp_MCC_v2_target.tre")
+
+# We prune the tree keeping onlye species in our trait matrix
+mammal_tree_prune <- ape::keep.tip(mammal_tree, traits_diet$species)
+
+
+# We create an iteration variable to map the imputation accross all the features 
+iter <- 2:ncol(traits_diet)
+
+
+# We map an anonymus function that impute the feature value
+# according a brownian motion model on the phylogenetic tree
+# via purrr package
+
+reconstruction <- purrr::map(iter, function(x){
+  p_BM <- phylopars(trait_data = select(traits_diet, c(1, all_of(x))),
+                    tree = mammal_tree_prune) 
+  
+  p_BM
+})
+
+
+
+recon <- anc.recon(trait_data= reconstruction[[1]]$anc_recon ,tree=reconstruction[[1]]$tree)
+
